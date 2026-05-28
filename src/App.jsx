@@ -23,19 +23,36 @@ export default function App() {
 
   // 🔥 SUPABASE LIVE + FETCH
   useEffect(() => {
+  fetchReservations();
+
+  const channel = supabase
+    .channel("reservations")
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "reservations",
+      },
+      (payload) => {
+        console.log("Realtime event:", payload);
+        fetchReservations(); // 🔥 zawsze odświeża UI
+      }
+    )
+    .subscribe((status) => {
+      console.log("Channel status:", status);
+    });
+
+  // 🔥 dodatkowy fallback (PEWNE LIVE)
+  const interval = setInterval(() => {
     fetchReservations();
+  }, 5000);
 
-    const channel = supabase
-      .channel("reservations")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "reservations" },
-        () => fetchReservations()
-      )
-      .subscribe();
-
-    return () => supabase.removeChannel(channel);
-  }, []);
+  return () => {
+    supabase.removeChannel(channel);
+    clearInterval(interval);
+  };
+}, []);
 
   const fetchReservations = async () => {
     const { data } = await supabase.from("reservations").select("*");
