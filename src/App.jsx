@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Clock3, Flame, Skull, Trees, Trash2 } from "lucide-react";
 import { supabase } from "./supabase";
 
@@ -11,13 +11,11 @@ export default function App() {
 
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+
   const [reservations, setReservations] = useState([]);
   const [error, setError] = useState("");
 
-  const [authForm, setAuthForm] = useState({
-    login: "",
-    password: "",
-  });
+  const [auth, setAuth] = useState({ login: "", password: "" });
 
   const [form, setForm] = useState({
     player: "",
@@ -27,37 +25,24 @@ export default function App() {
     to: "",
   });
 
-  // 🔐 AUTH SAFE FIX (NO WHITE / BLACK SCREEN)
+  // 🔐 AUTH SAFE
   useEffect(() => {
-    let mounted = true;
-
-    const init = async () => {
-      const { data } = await supabase.auth.getSession();
-
-      if (!mounted) return;
-
+    supabase.auth.getSession().then(({ data }) => {
       setUser(data.session?.user ?? null);
       setLoading(false);
-    };
-
-    init();
+    });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!mounted) return;
-
+    } = supabase.auth.onAuthStateChange((_e, session) => {
       setUser(session?.user ?? null);
-      setLoading(false); // 🔥 KLUCZ
+      setLoading(false);
     });
 
-    return () => {
-      mounted = false;
-      subscription?.unsubscribe();
-    };
+    return () => subscription.unsubscribe();
   }, []);
 
-  // 🔥 LIVE DATA
+  // 🔥 LIVE SAFE
   useEffect(() => {
     fetchReservations();
 
@@ -75,28 +60,26 @@ export default function App() {
 
   const fetchReservations = async () => {
     const { data } = await supabase.from("reservations").select("*");
-    setReservations(data ?? []);
+    setReservations(Array.isArray(data) ? data : []);
   };
 
-  const sortedReservations = useMemo(() => {
+  const sorted = useMemo(() => {
     return [...reservations].sort((a, b) => {
       if (a.date !== b.date) return a.date.localeCompare(b.date);
       return a.from.localeCompare(b.from);
     });
   }, [reservations]);
 
-  const overlaps = (aStart, aEnd, bStart, bEnd) =>
-    aStart < bEnd && aEnd > bStart;
+  const overlaps = (a, b, c, d) => a < d && b > c;
 
   // 🔑 LOGIN
   const login = async () => {
     setError("");
-
-    const email = `${authForm.login}@guild.local`;
+    const email = `${auth.login}@guild.local`;
 
     const { error } = await supabase.auth.signInWithPassword({
       email,
-      password: authForm.password,
+      password: auth.password,
     });
 
     if (error) setError(error.message);
@@ -104,35 +87,28 @@ export default function App() {
 
   const register = async () => {
     setError("");
-
-    const email = `${authForm.login}@guild.local`;
+    const email = `${auth.login}@guild.local`;
 
     const { error } = await supabase.auth.signUp({
       email,
-      password: authForm.password,
+      password: auth.password,
     });
 
     if (error) setError(error.message);
   };
 
-  // 🚪 LOGOUT FIXED (NO WHITE SCREEN EVER)
   const logout = async () => {
     await supabase.auth.signOut();
-
     setUser(null);
-    setReservations([]);
-    setError("");
-    setLoading(false); // 🔥 KLUCZOWE
   };
 
-  // ➕ ADD
-  const addReservation = async () => {
+  const add = async () => {
     setError("");
 
-    if (!user) return setError("Zaloguj się.");
-    if (!form.player.trim()) return setError("Podaj nick.");
-    if (!form.from || !form.to) return setError("Ustaw godziny.");
-    if (form.from >= form.to) return setError("Błędny czas.");
+    if (!user) return setError("Zaloguj się");
+    if (!form.player || !form.from || !form.to)
+      return setError("Uzupełnij dane");
+    if (form.from >= form.to) return setError("Błędny czas");
 
     const conflict = reservations.find(
       (r) =>
@@ -144,24 +120,17 @@ export default function App() {
     if (conflict) return setError(`Zajęte przez ${conflict.player}`);
 
     await supabase.from("reservations").insert([
-      {
-        player: form.player,
-        place: form.place,
-        date: form.date,
-        from: form.from,
-        to: form.to,
-        user_id: user.id,
-      },
+      { ...form, user_id: user.id },
     ]);
 
     setForm((p) => ({ ...p, player: "", from: "", to: "" }));
   };
 
-  const deleteReservation = async (id) => {
+  const del = async (id) => {
     await supabase.from("reservations").delete().eq("id", id);
   };
 
-  // ⏳ LOADING SAFE
+  // ⏳ LOADING GUARD
   if (loading) {
     return (
       <div style={styles.loading}>
@@ -170,7 +139,7 @@ export default function App() {
     );
   }
 
-  // 🔒 LOGIN SCREEN SAFE
+  // 🔒 LOGIN SCREEN (TWÓJ STYL)
   if (!user) {
     return (
       <div style={styles.loginWrap}>
@@ -184,7 +153,7 @@ export default function App() {
             placeholder="Login"
             style={styles.input}
             onChange={(e) =>
-              setAuthForm({ ...authForm, login: e.target.value })
+              setAuth({ ...auth, login: e.target.value })
             }
           />
 
@@ -193,7 +162,7 @@ export default function App() {
             placeholder="Hasło"
             style={styles.input}
             onChange={(e) =>
-              setAuthForm({ ...authForm, password: e.target.value })
+              setAuth({ ...auth, password: e.target.value })
             }
           />
 
@@ -211,19 +180,17 @@ export default function App() {
     );
   }
 
-  // 🌍 MAIN APP
+  // 🌍 MAIN (TWÓJ STYL 1:1)
   return (
     <div style={styles.app}>
       <div style={styles.container}>
-        <div style={styles.header}>
-          <h1 style={styles.bigTitle}>MEMENTOMORI</h1>
+        <h1 style={styles.bigTitle}>MEMENTOMORI</h1>
 
-          <div style={styles.userBar}>
-            {user?.email?.split("@")[0] || "player"}
-            <button onClick={logout} style={styles.logout}>
-              logout
-            </button>
-          </div>
+        <div style={styles.userBar}>
+          {user?.email?.split("@")?.[0] ?? "user"}
+          <button onClick={logout} style={styles.logout}>
+            logout
+          </button>
         </div>
 
         {/* FORM */}
@@ -277,7 +244,7 @@ export default function App() {
               }
             />
 
-            <button onClick={addReservation} style={styles.btnRed}>
+            <button onClick={add} style={styles.btnRed}>
               REZERWUJ
             </button>
           </div>
@@ -288,32 +255,34 @@ export default function App() {
         {/* 3 KOLUMNY */}
         <div style={styles.grid}>
           {places.map((place) => {
-            const col = sortedReservations.filter(
-              (r) => r.place === place.name
-            );
+            const Icon = place.icon;
 
             return (
               <div key={place.name} style={styles.col}>
-                <h2 style={styles.colTitle}>{place.name}</h2>
+                <h2 style={styles.colTitle}>
+                  <Icon size={20} /> {place.name}
+                </h2>
 
-                {col.map((r) => (
-                  <div key={r.id} style={styles.item}>
-                    <div>
-                      <b>{r.player}</b>
-                      <div style={styles.time}>
-                        {r.date} | {r.from} - {r.to}
+                {sorted
+                  .filter((r) => r.place === place.name)
+                  .map((r) => (
+                    <div key={r.id} style={styles.item}>
+                      <div>
+                        <b>{r.player}</b>
+                        <div style={styles.time}>
+                          {r.date} | {r.from} - {r.to}
+                        </div>
                       </div>
+
+                      {r.user_id === user.id && (
+                        <button onClick={() => del(r.id)}>
+                          <Trash2 size={18} />
+                        </button>
+                      )}
                     </div>
+                  ))}
 
-                    {r.user_id === user?.id && (
-                      <button onClick={() => deleteReservation(r.id)}>
-                        <Trash2 size={16} />
-                      </button>
-                    )}
-                  </div>
-                ))}
-
-                {col.length === 0 && (
+                {!sorted.some((r) => r.place === place.name) && (
                   <div style={styles.empty}>Brak rezerwacji</div>
                 )}
               </div>
@@ -325,175 +294,29 @@ export default function App() {
   );
 }
 
-/* 💀 ORIGINAL DARK STYLE (SAFE) */
+/* 💀 TWÓJ ORYGINALNY STYL */
 const styles = {
-  app: {
-    minHeight: "100vh",
-    background: "#000",
-    color: "#ddd",
-    fontFamily: "system-ui",
-  },
-
-  loading: {
-    minHeight: "100vh",
-    background: "#000",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    color: "#e11d48",
-    fontSize: 30,
-  },
-
-  container: {
-    maxWidth: 1200,
-    margin: "0 auto",
-    padding: 40,
-  },
-
-  header: {
-    textAlign: "center",
-    marginBottom: 50,
-  },
-
-  bigTitle: {
-    fontSize: "5rem",
-    color: "#e11d48",
-    textShadow: "0 0 40px rgba(225,29,72,0.8)",
-  },
-
-  userBar: {
-    marginTop: 10,
-  },
-
-  card: {
-    background: "rgba(20,20,20,0.95)",
-    border: "1px solid #450a0a",
-    borderRadius: 24,
-    padding: 30,
-    marginBottom: 40,
-  },
-
-  formGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))",
-    gap: 10,
-  },
-
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
-    gap: 24,
-  },
-
-  col: {
-    background: "rgba(20,20,20,0.9)",
-    border: "1px solid #444",
-    borderRadius: 20,
-    padding: 20,
-  },
-
-  colTitle: {
-    textAlign: "center",
-    color: "#e11d48",
-    marginBottom: 10,
-  },
-
-  item: {
-    background: "#111",
-    border: "1px solid #444",
-    padding: 12,
-    borderRadius: 14,
-    marginBottom: 10,
-    display: "flex",
-    justifyContent: "space-between",
-  },
-
-  time: {
-    color: "#999",
-    fontSize: 12,
-  },
-
-  empty: {
-    textAlign: "center",
-    color: "#666",
-    padding: 20,
-  },
-
-  input: {
-    background: "#111",
-    border: "1px solid #444",
-    padding: 14,
-    borderRadius: 12,
-    color: "white",
-  },
-
-  btnRed: {
-    background: "#b91c1c",
-    color: "white",
-    border: "none",
-    borderRadius: 12,
-    padding: 14,
-    cursor: "pointer",
-    fontWeight: "bold",
-  },
-
-  btnDark: {
-    background: "#111",
-    border: "1px solid #9f1239",
-    color: "#f87171",
-    padding: 14,
-    borderRadius: 12,
-    marginTop: 10,
-  },
-
-  error: {
-    marginTop: 15,
-    color: "#f87171",
-  },
-
-  loginWrap: {
-    minHeight: "100vh",
-    background: "#000",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  loginCard: {
-    width: 400,
-    display: "flex",
-    flexDirection: "column",
-    gap: 10,
-  },
-
-  title: {
-    textAlign: "center",
-    fontSize: 40,
-    color: "#e11d48",
-    marginBottom: 20,
-  },
-
-  bg: {
-    position: "absolute",
-    inset: 0,
-    background: "linear-gradient(to bottom,#000,#1a1a1a,#000)",
-  },
-
-  glow: {
-    position: "absolute",
-    width: 600,
-    height: 300,
-    background: "radial-gradient(circle, rgba(185,28,28,0.3), transparent 70%)",
-    filter: "blur(80px)",
-  },
-
-  logout: {
-    marginLeft: 10,
-    background: "#111",
-    border: "1px solid #444",
-    color: "#fff",
-    padding: 6,
-    borderRadius: 8,
-    cursor: "pointer",
-  },
+  app: { minHeight: "100vh", background: "#000", color: "#ddd", fontFamily: "system-ui" },
+  container: { maxWidth: 1200, margin: "0 auto", padding: 40 },
+  bigTitle: { fontSize: "5.5rem", textAlign: "center", color: "#e11d48", textShadow: "0 0 40px rgba(225,29,72,0.8)" },
+  userBar: { textAlign: "center", marginBottom: 30 },
+  card: { background: "rgba(20,20,20,0.95)", border: "1px solid #450a0a", borderRadius: 24, padding: 32, marginBottom: 50, boxShadow: "0 0 30px rgba(185,28,72,0.3)" },
+  formGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 },
+  grid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24 },
+  col: { background: "rgba(20,20,20,0.9)", border: "1px solid #444", borderRadius: 24, padding: 28 },
+  colTitle: { textAlign: "center", color: "#e11d48", marginBottom: 20, display: "flex", gap: 8, justifyContent: "center", alignItems: "center" },
+  item: { background: "#111", border: "1px solid #444", padding: 14, borderRadius: 16, marginBottom: 12, display: "flex", justifyContent: "space-between" },
+  time: { color: "#999", marginTop: 4 },
+  empty: { textAlign: "center", color: "#666", padding: 40 },
+  input: { background: "#111", border: "1px solid #444", padding: 14, borderRadius: 12, color: "white" },
+  btnRed: { background: "#b91c1c", color: "white", border: "none", borderRadius: 12, padding: 16, fontWeight: "bold", cursor: "pointer" },
+  btnDark: { background: "#111", border: "1px solid #9f1239", color: "#f87171", padding: 14, borderRadius: 12 },
+  error: { marginTop: 16, color: "#f87171" },
+  loginWrap: { minHeight: "100vh", background: "#000", display: "flex", justifyContent: "center", alignItems: "center", position: "relative" },
+  loginCard: { width: 420, display: "flex", flexDirection: "column", gap: 10, zIndex: 2 },
+  title: { textAlign: "center", fontSize: 40, color: "#e11d48", marginBottom: 20 },
+  bg: { position: "absolute", inset: 0, background: "linear-gradient(to bottom,#000,#1a1a1a,#000)" },
+  glow: { position: "absolute", width: 700, height: 350, background: "radial-gradient(circle, rgba(185,28,28,0.35), transparent 70%)", filter: "blur(90px)" },
+  logout: { marginLeft: 10, background: "#111", border: "1px solid #444", color: "#fff", padding: 6, borderRadius: 8, cursor: "pointer" },
+  loading: { minHeight: "100vh", display: "flex", justifyContent: "center", alignItems: "center", background: "#000", color: "#fff" },
 };
